@@ -3,7 +3,7 @@
 require_once __DIR__ . '/db.php';
 
 // REPLACE WITH YOUR TELEGRAM BOT TOKEN FROM BOTFATHER
-$botToken = '9225431360:AAHgIUPfMXE7XBVZubVv0L-4gFsTbgYdGL8';
+$botToken = '';
 $apiUrl = "https://api.telegram.org/bot{$botToken}/";
 
 // Read incoming Telegram webhook update
