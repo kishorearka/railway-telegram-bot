@@ -1,15 +1,18 @@
+
 <?php
-// telegram_bot.php
-// Runs on Render and uses the existing InfinityFree station API.
+// index.php
+// Telegram webhook + InfinityFree station API
 
 $botToken = getenv('BOT_TOKEN');
-$apiUrl = 'https://api.telegram.org/bot' . $botToken . '/';
-$stationApiUrl = 'https://railwaystationqrcode.infinityfree.me/api.php';
 
 if (!$botToken) {
+    error_log('ERROR: BOT_TOKEN environment variable is missing.');
     http_response_code(500);
     exit('BOT_TOKEN environment variable is missing.');
 }
+
+$apiUrl = 'https://api.telegram.org/bot' . $botToken . '/';
+$stationApiUrl = 'https://railwaystationqrcode.infinityfree.me/api.php';
 
 // Read Telegram webhook update
 $content = file_get_contents('php://input');
@@ -29,23 +32,22 @@ if (!$chatId || $text === '') {
     exit('OK');
 }
 
-// Welcome message
+// Welcome command
 if (preg_match('/^\/start(?:@\w+)?(?:\s|$)/i', $text)) {
     sendTelegramMessage(
         $apiUrl,
         $chatId,
-        "🚆 *Welcome to Indian Railways UTS QR Bot!*\n\n"
-        . "Send a station code or station name to find its UTS QR page.\n\n"
-        . "Examples: `MAS`, `KLT`, `Chennai Central`\n"
-        . "You can also use `/station MAS`.",
-        'Markdown'
+        "🚆 Welcome to Indian Railways UTS QR Bot!\n\n" .
+        "Send a station code or station name.\n\n" .
+        "Examples: MBM, MAS, Mambalam\n" .
+        "You can also use /station MBM."
     );
 
     http_response_code(200);
     exit('OK');
 }
 
-// Accept /station MAS, /station@YourBot MAS, or a plain station search.
+// Accept /station MBM or plain text
 $query = preg_replace('/^\/station(?:@\w+)?\s*/i', '', $text);
 $query = trim($query);
 
@@ -53,8 +55,7 @@ if (str_starts_with($query, '/')) {
     sendTelegramMessage(
         $apiUrl,
         $chatId,
-        "Unknown command. Send a station code or name, for example `MAS`.",
-        'Markdown'
+        'Unknown command. Send a station code or name, for example MBM.'
     );
 
     http_response_code(200);
@@ -65,20 +66,21 @@ if ($query === '') {
     sendTelegramMessage(
         $apiUrl,
         $chatId,
-        "Please enter a station code or name, for example `MAS`.",
-        'Markdown'
+        'Please enter a station code or name, for example MBM.'
     );
 
     http_response_code(200);
     exit('OK');
 }
 
-// Query the existing InfinityFree API.
-$result = httpGetJson($stationApiUrl . '?' . http_build_query([
-    'q' => $query
-]));
+// Call InfinityFree station API
+$result = httpGetJson(
+    $stationApiUrl . '?' . http_build_query(['q' => $query])
+);
 
 if ($result === null || !isset($result['status'])) {
+    error_log('ERROR: Station API returned invalid JSON or HTTP failure.');
+
     sendTelegramMessage(
         $apiUrl,
         $chatId,
@@ -89,22 +91,11 @@ if ($result === null || !isset($result['status'])) {
     exit('OK');
 }
 
-if ($result['status'] === 'error') {
+if ($result['status'] !== 'success') {
     sendTelegramMessage(
         $apiUrl,
         $chatId,
-        $result['message'] ?? 'Please enter a valid station code or name.'
-    );
-
-    http_response_code(200);
-    exit('OK');
-}
-
-if (!in_array($result['status'], ['success', 'fallback'], true)) {
-    sendTelegramMessage(
-        $apiUrl,
-        $chatId,
-        'Sorry, I could not process that station search.'
+        $result['message'] ?? "Station '" . $query . "' was not found."
     );
 
     http_response_code(200);
@@ -113,111 +104,147 @@ if (!in_array($result['status'], ['success', 'fallback'], true)) {
 
 $station = $result['data'] ?? [];
 
-$stnCode = trim((string)($station['code'] ?? ''));
-$stnName = trim((string)($station['name'] ?? ''));
-$stnState = trim((string)($station['state'] ?? 'India'));
-$stnZone = trim((string)($station['zone'] ?? 'IR'));
-$stnDivision = trim((string)($station['division'] ?? ''));
+$code = trim((string)($station['code'] ?? ''));
+$name = trim((string)($station['name'] ?? ''));
 
-if ($stnCode === '' || $stnName === '' || $result['status'] === 'fallback') {
+if ($code === '' || $name === '') {
+    error_log('ERROR: API success response has missing station code/name.');
+
     sendTelegramMessage(
         $apiUrl,
         $chatId,
-        "❌ Station '" . $query . "' was not found. Please check the station code or name."
+        'Station information is incomplete. Please try again later.'
     );
 
     http_response_code(200);
     exit('OK');
 }
 
-// Link to your existing station page on InfinityFree.
+$state = trim((string)($station['state'] ?? 'India'));
+$zone = trim((string)($station['zone'] ?? 'IR'));
+$division = trim((string)($station['division'] ?? ''));
+
 $portalUrl = 'https://railwaystationqrcode.infinityfree.me/station.php?' .
-    http_build_query(['code' => $stnCode]);
+    http_build_query(['code' => $code]);
 
-$reply = "✅ *Station Found!*\n\n"
-    . "🚉 *" . mdEscape($stnName) . "* (`" . mdEscape($stnCode) . "`)\n"
-    . "📍 State: " . mdEscape($stnState) . "\n"
-    . "🔀 Zone: " . mdEscape($stnZone);
+$reply = "✅ Station Found!\n\n" .
+    "🚉 " . $name . " (" . $code . ")\n" .
+    "📍 State: " . $state . "\n" .
+    "🔀 Zone: " . $zone;
 
-if ($stnDivision !== '') {
-    $reply .= "\n🏢 Division: " . mdEscape($stnDivision);
+if ($division !== '') {
+    $reply .= "\n🏢 Division: " . $division;
 }
 
-$reply .= "\n\n🔗 [View & Download UTS QR Code](" . $portalUrl . ")";
+$reply .= "\n\n🔗 View & Download UTS QR Code:\n" . $portalUrl;
 
-sendTelegramMessage($apiUrl, $chatId, $reply, 'Markdown');
+sendTelegramMessage($apiUrl, $chatId, $reply);
 
 http_response_code(200);
 echo 'OK';
 exit;
 
 
-// Fetch JSON from the InfinityFree API.
+// Fetch JSON and write diagnostic details to Render Logs
 function httpGetJson(string $url): ?array
 {
+    error_log('Station API request URL: ' . $url);
+
     $ch = curl_init($url);
+
+    if ($ch === false) {
+        error_log('ERROR: curl_init failed.');
+        return null;
+    }
 
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_CONNECTTIMEOUT => 10,
-        CURLOPT_TIMEOUT => 20,
+        CURLOPT_TIMEOUT => 25,
         CURLOPT_FOLLOWLOCATION => true,
         CURLOPT_HTTPHEADER => ['Accept: application/json'],
+        CURLOPT_USERAGENT => 'RailwayTelegramBot/1.0',
     ]);
 
     $response = curl_exec($ch);
-    $statusCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $statusCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+
     curl_close($ch);
 
-    if ($response === false || $statusCode < 200 || $statusCode >= 300) {
+    error_log('Station API HTTP status: ' . $statusCode);
+
+    if ($curlError !== '') {
+        error_log('Station API cURL error: ' . $curlError);
+    }
+
+    if ($response === false) {
+        error_log('Station API response: cURL returned false.');
         return null;
     }
 
-    $data = json_decode($response, true);
+    error_log(
+        'Station API response body: ' .
+        substr((string)$response, 0, 1000)
+    );
 
-    return is_array($data) ? $data : null;
+    if ($statusCode < 200 || $statusCode >= 300) {
+        error_log('ERROR: Station API returned non-2xx HTTP status.');
+        return null;
+    }
+
+    $data = json_decode((string)$response, true);
+
+    if (!is_array($data)) {
+        error_log('ERROR: Station API response is not valid JSON.');
+        return null;
+    }
+
+    return $data;
 }
 
 
-// Send a message through the Telegram Bot API.
+// Send Telegram message
 function sendTelegramMessage(
     string $apiUrl,
     int|string $chatId,
-    string $text,
-    ?string $parseMode = null
+    string $text
 ): void {
-    $data = [
+    $ch = curl_init($apiUrl . 'sendMessage');
+
+    if ($ch === false) {
+        error_log('ERROR: Could not initialize Telegram cURL.');
+        return;
+    }
+
+    $payload = [
         'chat_id' => $chatId,
         'text' => $text,
         'disable_web_page_preview' => false,
     ];
 
-    if ($parseMode !== null) {
-        $data['parse_mode'] = $parseMode;
-    }
-
-    $ch = curl_init($apiUrl . 'sendMessage');
-
     curl_setopt_array($ch, [
         CURLOPT_POST => true,
-        CURLOPT_POSTFIELDS => json_encode($data),
+        CURLOPT_POSTFIELDS => json_encode($payload),
         CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_CONNECTTIMEOUT => 10,
         CURLOPT_TIMEOUT => 20,
     ]);
 
-    curl_exec($ch);
+    $response = curl_exec($ch);
+    $statusCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+
+    if ($curlError !== '') {
+        error_log('Telegram cURL error: ' . $curlError);
+    }
+
+    error_log('Telegram sendMessage HTTP status: ' . $statusCode);
+
+    if ($response !== false && $statusCode >= 400) {
+        error_log('Telegram API error response: ' . substr($response, 0, 500));
+    }
+
     curl_close($ch);
-}
-
-
-// Escape Markdown special characters in station fields.
-function mdEscape(string $value): string
-{
-    return str_replace(
-        ['\\', '_', '*', '`', '['],
-        ['\\\\', '\\_', '\\*', '\\`', '\\['],
-        $value
-    );
 }
