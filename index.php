@@ -1,20 +1,13 @@
 
+
 <?php
 declare(strict_types=1);
 
-/*
-|--------------------------------------------------------------------------
-| RAILWAY STATION TELEGRAM BOT - WITH DEBUG LOGGING
-|--------------------------------------------------------------------------
-| Environment variable: BOT_TOKEN
-| Station database: stations.json
-| Hosting: Render Docker / PHP 8.2 Apache
-|--------------------------------------------------------------------------
-*/
+error_log("MY_RAILWAY_BOT_INDEX_PHP_IS_RUNNING");
 
 date_default_timezone_set('Asia/Kolkata');
-
 header('Content-Type: text/plain; charset=utf-8');
+
 
 /**
  * Write diagnostic messages to Render application logs.
