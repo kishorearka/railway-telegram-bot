@@ -1,24 +1,30 @@
 
-
 <?php
 declare(strict_types=1);
 
-error_log("MY_RAILWAY_BOT_INDEX_PHP_IS_RUNNING");
+/*
+|--------------------------------------------------------------------------
+| RAILWAY STATION TELEGRAM BOT
+|--------------------------------------------------------------------------
+| Hosting: Render with PHP 8.2 + Apache
+| Environment variable: BOT_TOKEN
+| Station database: stations.json
+|--------------------------------------------------------------------------
+*/
 
 date_default_timezone_set('Asia/Kolkata');
+
 header('Content-Type: text/plain; charset=utf-8');
 
-
 /**
- * Write diagnostic messages to Render application logs.
- * Never log the bot token.
+ * Log diagnostic information to Render logs.
+ * Never log the Telegram bot token.
  */
 function logMessage(string $message, array $context = []): void
 {
     $timestamp = date('Y-m-d H:i:s');
 
     $contextText = '';
-
     if ($context !== []) {
         $contextText = ' ' . json_encode(
             $context,
@@ -32,31 +38,31 @@ function logMessage(string $message, array $context = []): void
 }
 
 logMessage('========== REQUEST START ==========');
-logMessage('PHP script started', [
+logMessage('MY_RAILWAY_BOT_INDEX_PHP_IS_RUNNING', [
     'method' => $_SERVER['REQUEST_METHOD'] ?? 'unknown',
-    'uri' => $_SERVER['REQUEST_URI'] ?? 'unknown',
-    'content_type' => $_SERVER['CONTENT_TYPE'] ?? 'unknown'
+    'uri' => $_SERVER['REQUEST_URI'] ?? 'unknown'
 ]);
 
-// Health check when opening the website in a browser.
+// Health check for browser and hosting monitors.
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'GET' ||
     ($_SERVER['REQUEST_METHOD'] ?? '') === 'HEAD') {
-    logMessage('Health check request received');
+
+    logMessage('Health check request');
 
     echo "Railway Telegram Bot is running.\n";
-    echo "PHP: " . PHP_VERSION . "\n";
-    echo "Station database: " .
+    echo 'PHP version: ' . PHP_VERSION . "\n";
+    echo 'stations.json: ' .
         (is_file(__DIR__ . '/stations.json') ? 'Found' : 'Missing') . "\n";
 
     exit;
 }
 
-// Read the Telegram webhook request.
+// Read incoming Telegram webhook request.
 $rawInput = file_get_contents('php://input');
 
-logMessage('Incoming POST body received', [
-    'body_length' => strlen($rawInput ?: ''),
-    'body_preview' => substr($rawInput ?: '', 0, 1500)
+logMessage('Incoming request body received', [
+    'length' => strlen($rawInput ?: ''),
+    'preview' => substr($rawInput ?: '', 0, 1200)
 ]);
 
 if ($rawInput === false || trim($rawInput) === '') {
@@ -66,12 +72,12 @@ if ($rawInput === false || trim($rawInput) === '') {
     exit;
 }
 
-// Decode JSON from Telegram.
+// Decode Telegram JSON update.
 $update = json_decode($rawInput, true);
 
 if (!is_array($update)) {
     logMessage('ERROR: Invalid JSON', [
-        'json_error' => json_last_error_msg()
+        'error' => json_last_error_msg()
     ]);
 
     http_response_code(400);
@@ -81,31 +87,31 @@ if (!is_array($update)) {
 
 logMessage('Telegram update decoded', [
     'update_id' => $update['update_id'] ?? null,
-    'update_keys' => array_keys($update)
+    'keys' => array_keys($update)
 ]);
 
-// Read the bot token from Render environment variables.
+// Load token from Render environment.
 $token = getenv('BOT_TOKEN') ?: '';
 
 if ($token === '') {
     logMessage('CRITICAL ERROR: BOT_TOKEN is missing');
-
-    // A non-2xx response tells Telegram delivery failed.
     http_response_code(500);
-    echo 'BOT_TOKEN is missing';
+    echo 'BOT_TOKEN environment variable is missing';
     exit;
 }
 
-logMessage('BOT_TOKEN environment variable is present');
+logMessage('BOT_TOKEN is configured');
 
-// Send a message using the Telegram Bot API.
+/**
+ * Send a Telegram message and log the API result.
+ */
 function sendTelegramMessage(
     string $token,
     int|string $chatId,
     string $text
 ): bool {
     if (!function_exists('curl_init')) {
-        logMessage('CRITICAL ERROR: PHP cURL extension is unavailable');
+        logMessage('CRITICAL ERROR: PHP cURL extension is missing');
         return false;
     }
 
@@ -118,15 +124,15 @@ function sendTelegramMessage(
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
     if ($payload === false) {
-        logMessage('ERROR: Could not encode sendMessage payload', [
-            'json_error' => json_last_error_msg()
+        logMessage('ERROR: JSON encoding failed', [
+            'error' => json_last_error_msg()
         ]);
         return false;
     }
 
-    logMessage('Sending Telegram reply', [
+    logMessage('Sending Telegram message', [
         'chat_id' => $chatId,
-        'text_length' => mb_strlen_safe($text)
+        'message_length' => strlen($text)
     ]);
 
     $ch = curl_init($url);
@@ -149,7 +155,7 @@ function sendTelegramMessage(
     curl_close($ch);
 
     if ($response === false) {
-        logMessage('ERROR: Telegram API cURL request failed', [
+        logMessage('ERROR: Telegram cURL request failed', [
             'http_status' => $httpStatus,
             'curl_error' => $curlError
         ]);
@@ -158,52 +164,55 @@ function sendTelegramMessage(
 
     $result = json_decode($response, true);
 
-    logMessage('Telegram sendMessage response', [
+    logMessage('Telegram API response', [
         'http_status' => $httpStatus,
         'telegram_ok' => $result['ok'] ?? null,
-        'telegram_description' => $result['description'] ?? null,
-        'response_preview' => substr($response, 0, 1200)
+        'description' => $result['description'] ?? null,
+        'response' => substr($response, 0, 1000)
     ]);
 
-    if ($httpStatus < 200 || $httpStatus >= 300 ||
-        !is_array($result) || ($result['ok'] ?? false) !== true) {
-        logMessage('ERROR: Telegram did not accept the message');
+    if (
+        $httpStatus < 200 ||
+        $httpStatus >= 300 ||
+        !is_array($result) ||
+        ($result['ok'] ?? false) !== true
+    ) {
+        logMessage('ERROR: Telegram rejected the message');
         return false;
     }
 
-    logMessage('SUCCESS: Telegram message sent', [
+    logMessage('SUCCESS: Telegram accepted the message', [
         'chat_id' => $chatId
     ]);
 
     return true;
 }
 
-function mb_strlen_safe(string $value): int
-{
-    return function_exists('mb_strlen')
-        ? mb_strlen($value, 'UTF-8')
-        : strlen($value);
-}
-
-// Load the station database from the local JSON file.
+/**
+ * Load local station records.
+ *
+ * Supported formats:
+ *   [ { "code": "MBM", ... } ]
+ *   { "stations": [ { "code": "MBM", ... } ] }
+ */
 function loadStations(): array
 {
     $file = __DIR__ . '/stations.json';
 
     logMessage('Loading station database', [
-        'file' => $file,
+        'path' => $file,
         'exists' => is_file($file)
     ]);
 
     if (!is_file($file)) {
-        logMessage('ERROR: stations.json not found');
+        logMessage('ERROR: stations.json does not exist');
         return [];
     }
 
     $json = file_get_contents($file);
 
     if ($json === false) {
-        logMessage('ERROR: Could not read stations.json');
+        logMessage('ERROR: Unable to read stations.json');
         return [];
     }
 
@@ -216,37 +225,38 @@ function loadStations(): array
         return [];
     }
 
-    // Also support {"stations": [...]} format.
     if (isset($stations['stations']) &&
         is_array($stations['stations'])) {
         $stations = $stations['stations'];
     }
 
-    // Validate and remove invalid entries.
     $stations = array_values(array_filter(
         $stations,
-        static fn($station): bool =>
-            is_array($station) &&
-            isset($station['code']) &&
-            trim((string)$station['code']) !== ''
+        static function ($station): bool {
+            return is_array($station)
+                && isset($station['code'])
+                && trim((string) $station['code']) !== '';
+        }
     ));
 
     logMessage('Station database loaded', [
-        'station_count' => count($stations)
+        'count' => count($stations)
     ]);
 
     return $stations;
 }
 
-// Format station information for Telegram.
+/**
+ * Format a station record.
+ */
 function formatStation(array $station): string
 {
-    $code = strtoupper(trim((string)($station['code'] ?? '')));
-    $name = trim((string)($station['name'] ?? 'Unknown'));
-    $state = trim((string)($station['state'] ?? 'India'));
-    $zone = trim((string)($station['zone'] ?? 'IR'));
-    $division = trim((string)($station['division'] ?? ''));
-    $uts = trim((string)($station['uts_payload'] ?? ''));
+    $code = strtoupper(trim((string) ($station['code'] ?? '')));
+    $name = trim((string) ($station['name'] ?? 'Unknown'));
+    $state = trim((string) ($station['state'] ?? 'India'));
+    $zone = trim((string) ($station['zone'] ?? 'IR'));
+    $division = trim((string) ($station['division'] ?? ''));
+    $uts = trim((string) ($station['uts_payload'] ?? ''));
 
     $reply = "🚉 Railway Station Details\n\n";
     $reply .= "Station Name: {$name}\n";
@@ -269,36 +279,38 @@ function formatStation(array $station): string
     return $reply;
 }
 
-// Process the incoming Telegram update.
+/**
+ * Process an incoming Telegram message.
+ */
 $message = $update['message'] ?? null;
 
 if (!is_array($message)) {
-    logMessage('Update has no standard message object', [
+    logMessage('Update does not contain a standard message', [
         'update_id' => $update['update_id'] ?? null
     ]);
 
-    // Other update types are not handled by this bot.
     echo 'OK';
     exit;
 }
 
 $chatId = $message['chat']['id'] ?? null;
-$text = trim((string)($message['text'] ?? ''));
+$text = trim((string) ($message['text'] ?? ''));
 
-logMessage('Incoming message parsed', [
+logMessage('Incoming Telegram message', [
     'chat_id' => $chatId,
     'message_id' => $message['message_id'] ?? null,
     'text' => substr($text, 0, 500)
 ]);
 
 if ($chatId === null) {
-    logMessage('ERROR: Incoming message has no chat ID');
+    logMessage('ERROR: No chat ID in message');
     echo 'OK';
     exit;
 }
 
+// Handle messages without text.
 if ($text === '') {
-    logMessage('Message contains no text');
+    logMessage('Message has no text');
 
     sendTelegramMessage(
         $token,
@@ -310,9 +322,9 @@ if ($text === '') {
     exit;
 }
 
-// /start command.
+// /start
 if (preg_match('/^\/start(?:@[A-Za-z0-9_]+)?(?:\s|$)/i', $text)) {
-    logMessage('Processing /start command');
+    logMessage('Processing /start');
 
     $reply = "🚆 Welcome to Railway Station Bot!\n\n";
     $reply .= "Search for an Indian railway station by code or name.\n\n";
@@ -329,9 +341,9 @@ if (preg_match('/^\/start(?:@[A-Za-z0-9_]+)?(?:\s|$)/i', $text)) {
     exit;
 }
 
-// /help command.
+// /help
 if (preg_match('/^\/help(?:@[A-Za-z0-9_]+)?(?:\s|$)/i', $text)) {
-    logMessage('Processing /help command');
+    logMessage('Processing /help');
 
     $reply = "Railway Station Bot Help\n\n";
     $reply .= "Search using a station code or name.\n\n";
@@ -346,36 +358,37 @@ if (preg_match('/^\/help(?:@[A-Za-z0-9_]+)?(?:\s|$)/i', $text)) {
     exit;
 }
 
-// Extract the query from /station CODE or /station@BotName CODE.
+// Extract station search query.
 $query = preg_replace(
     '/^\/station(?:@[A-Za-z0-9_]+)?\s*/i',
     '',
     $text
 );
 
-$query = trim((string)$query);
+$query = trim((string) $query);
 
-// Ignore unsupported slash commands.
-if (str_starts_with($text, '/')) {
-    if (!preg_match('/^\/station(?:@[A-Za-z0-9_]+)?(?:\s|$)/i', $text)) {
-        logMessage('Unsupported bot command', [
-            'command' => $text
-        ]);
+// Ignore unknown slash commands.
+if (str_starts_with($text, '/') &&
+    !preg_match('/^\/station(?:@[A-Za-z0-9_]+)?(?:\s|$)/i', $text)) {
 
-        sendTelegramMessage(
-            $token,
-            $chatId,
-            "Unknown command.\nSend /start to see how to use this bot."
-        );
+    logMessage('Unknown command', [
+        'text' => $text
+    ]);
 
-        echo 'OK';
-        logMessage('========== REQUEST END ==========');
-        exit;
-    }
+    sendTelegramMessage(
+        $token,
+        $chatId,
+        "Unknown command.\nSend /start for instructions."
+    );
+
+    echo 'OK';
+    logMessage('========== REQUEST END ==========');
+    exit;
 }
 
+// Handle /station without a search term.
 if ($query === '') {
-    logMessage('Station search query is empty');
+    logMessage('Station query is empty');
 
     sendTelegramMessage(
         $token,
@@ -395,7 +408,7 @@ logMessage('Searching for station', [
 $stations = loadStations();
 
 if ($stations === []) {
-    logMessage('ERROR: No station records available');
+    logMessage('ERROR: Station database is empty or unavailable');
 
     sendTelegramMessage(
         $token,
@@ -411,39 +424,43 @@ if ($stations === []) {
 $queryUpper = strtoupper($query);
 $matches = [];
 
-// 1. Exact station-code match.
+// First: exact station code.
 foreach ($stations as $station) {
-    $code = strtoupper(trim((string)($station['code'] ?? '')));
+    $code = strtoupper(trim((string) ($station['code'] ?? '')));
 
-    if ($code === $queryUpper) {
+    if ($code !== '' && $code === $queryUpper) {
         $matches = [$station];
-        logMessage('Exact station-code match found', [
+
+        logMessage('Exact station code matched', [
             'code' => $code
         ]);
+
         break;
     }
 }
 
-// 2. Exact station-name match.
+// Second: exact station name.
 if ($matches === []) {
     foreach ($stations as $station) {
-        $name = trim((string)($station['name'] ?? ''));
+        $name = trim((string) ($station['name'] ?? ''));
 
         if ($name !== '' && strcasecmp($name, $query) === 0) {
             $matches = [$station];
-            logMessage('Exact station-name match found', [
+
+            logMessage('Exact station name matched', [
                 'name' => $name
             ]);
+
             break;
         }
     }
 }
 
-// 3. Partial code or name matches.
+// Third: partial code or name.
 if ($matches === []) {
     foreach ($stations as $station) {
-        $code = strtoupper(trim((string)($station['code'] ?? '')));
-        $name = trim((string)($station['name'] ?? ''));
+        $code = strtoupper(trim((string) ($station['code'] ?? '')));
+        $name = trim((string) ($station['name'] ?? ''));
 
         if (
             ($code !== '' && str_contains($code, $queryUpper)) ||
@@ -462,32 +479,39 @@ if ($matches === []) {
     ]);
 }
 
-// Return the search results.
+// Send one station result.
 if (count($matches) === 1) {
-    $reply = formatStation($matches[0]);
-
-    logMessage('Sending single station result', [
-        'code' => $matches[0]['code'] ?? ''
+    logMessage('Returning station result', [
+        'code' => $matches[0]['code'] ?? null
     ]);
 
-    sendTelegramMessage($token, $chatId, $reply);
+    sendTelegramMessage(
+        $token,
+        $chatId,
+        formatStation($matches[0])
+    );
 
 } elseif (count($matches) > 1) {
+    // Multiple matches: let the user select a station code.
     $reply = "🔎 Multiple stations found for: {$query}\n\n";
 
     foreach ($matches as $station) {
-        $code = trim((string)($station['code'] ?? ''));
-        $name = trim((string)($station['name'] ?? 'Unknown'));
+        $code = strtoupper(trim((string) ($station['code'] ?? '')));
+        $name = trim((string) ($station['name'] ?? 'Unknown'));
 
         $reply .= "• {$name} ({$code})\n";
         $reply .= "/station {$code}\n\n";
     }
 
-    logMessage('Sending multiple station results', [
-        'match_count' => count($matches)
+    logMessage('Returning multiple station matches', [
+        'count' => count($matches)
     ]);
 
-    sendTelegramMessage($token, $chatId, trim($reply));
+    sendTelegramMessage(
+        $token,
+        $chatId,
+        trim($reply)
+    );
 
 } else {
     logMessage('No station found', [
