@@ -1,4 +1,4 @@
-[
+/[
   {
     "id": 1,
     "code": "MASS",
@@ -10212,16 +10212,6 @@
     "zone": "NCR",
     "division": null,
     "uts_payload": "UTS:STN:ABE",
-    "created_at": "2026-10-28 10:34:12"
-  },
-  {
-    "id": 1476,
-    "code": "ABEO",
-    "name": "Pattaravakkam",
-    "state": "",
-    "zone": "SR",
-    "division": null,
-    "uts_payload": "UTS:STN:ABEO",
     "created_at": "2026-10-28 10:34:12"
   },
   {
