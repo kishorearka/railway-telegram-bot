@@ -1,16 +1,23 @@
 
 FROM php:8.2-apache
 
+# Install required PHP extensions
 RUN apt-get update \
     && apt-get install -y --no-install-recommends libcurl4-openssl-dev \
     && docker-php-ext-install curl pdo_mysql mysqli \
     && a2enmod rewrite \
     && rm -rf /var/lib/apt/lists/*
 
+# Set application directory
 WORKDIR /var/www/html
 
+# Copy application files, including index.php and stations.json
 COPY . /var/www/html/
 
+# Set permissions
+RUN chown -R www-data:www-data /var/www/html
+
+# Apache listens on port 80
 EXPOSE 80
 
 CMD ["apache2-foreground"]
