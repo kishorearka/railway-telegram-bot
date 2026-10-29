@@ -1,23 +1,24 @@
 
 FROM php:8.2-apache
 
-# Install required PHP extensions
 RUN apt-get update \
     && apt-get install -y --no-install-recommends libcurl4-openssl-dev \
     && docker-php-ext-install curl pdo_mysql mysqli \
     && a2enmod rewrite \
     && rm -rf /var/lib/apt/lists/*
 
-# Set application directory
 WORKDIR /var/www/html
 
-# Copy application files, including index.php and stations.json
 COPY . /var/www/html/
 
-# Set permissions
+# Fail the build if index.php has a syntax error.
+RUN php -l /var/www/html/index.php \
+    && echo "RAILWAY_BOT_BUILD_CHECK_PASSED" \
+    && test -f /var/www/html/stations.json \
+    && echo "STATIONS_JSON_FOUND"
+
 RUN chown -R www-data:www-data /var/www/html
 
-# Apache listens on port 80
 EXPOSE 80
 
 CMD ["apache2-foreground"]
